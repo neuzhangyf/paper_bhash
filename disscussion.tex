@@ -1,0 +1,47 @@
+\section{Discussions}
+\label{sec:param}
+
+\subsection{Key Parameters Analysis}
+
+This overhead depends on certain bHash parameters: the hash bucket number, the sub file number, the sub-file buffer size and the grouping buffer size. A model for the optimal selection of these parameters is given in this section. We will expand our analysis from two aspects: disk access and memory consumption. For better analysis, we first define the following identifiers: the total data size $M$ (in bytes), the number of different groups $G$, the average size of each data $r$ (in bytes), thus, the total number of data is
+\begin{equation}\label{eq:numberofdata}
+  N=\frac{M}{r}
+\end{equation}
+the number of buckets $b$, the number of small source files $f$, the sub-file buffer size $e$, the size of grouping buffer $g$(in bytes).
+
+\textbf{Disk Access}. the total number of reading disk is fixed, so we will focus on analysing the cost of writing disk. The first round of writing disk occurs when the source file is divided into some small partition files. The number of partition files is $f$, the total number of data records is $N$, then each partition file contains  $n=\frac{N}{f}$ records (assuming that the randomness of Hash makes data distributed uniformly). The number of a sub-file buffer being filled up by the data from a partition file is $\lceil\frac{n}{e}\rceil$ and a disk access will be generated for each flush buffer, then $f$ sub files will access disk $S_1$ times.
+\begin{equation}\label{eq:numberofdata}
+  S_1=f\cdot \lceil\frac{n}{e}\rceil=f\cdot\lceil\frac{N}{f\cdot e}\rceil \approx \frac{N}{e}=\frac{M}{e\cdot r}
+\end{equation}
+The second round of writing disk occurs in file filling phase. Recall to file filling phase, the data in each spill is retrieved and written to output file according to the offset in the hash table. The grouping buffer (as shown in Figure 2) can buffer $\frac{g}{r}$ kv-pairs before a flush operation is triggered. One flush may contains some disk seeks, but some disk access optimizations have been applied(recall reordering kv-pairs in section \uppercase\expandafter{\romannumeral3}) which can ensure the seek is sequential and the seek time is expected to be very small because the next offset is physically very close to the current disk head position. Thus, we simplify a flush as one disk access. The number of the grouping buffer being filled up by the data from a spill is $\lceil\frac{n}{g/r}\rceil=\lceil\frac{n\cdot r}{g}\rceil$, then the file filling phase need access disk $S_2$ times.
+\begin{equation}\label{eq:numberofdata}
+  S_2=f\cdot \lceil\frac{n\cdot r}{g}\rceil=f\cdot\lceil\frac{N\cdot r}{f\cdot g}\rceil \approx \frac{N\cdot r}{g}=\frac{M}{g}
+\end{equation}
+Therefore, the total number of accessing disk as shown in Formula 6.
+\begin{equation}\label{eq:numberofdata}
+  S=S_1+S_2=f\cdot\lceil\frac{N}{f\cdot e}\rceil + f\cdot\lceil\frac{N\cdot r}{f\cdot g}\rceil \approx \frac{M}{e\cdot r}+\frac{M}{g}
+\end{equation}
+
+\textbf{Memory Consumption}. Memory consumption is dominated by the hash table in memory and other two buffers. bHash uses sub-file buffer to
+ store kv-pairs in statistics collection phase and grouping buffer to store grouping results data; therefore, sub-file buffer and grouping buffer can be safely overwritten. we use zipper method to implement the hash table. the memory consumption is consist of basic array and group size entries for each unique key. Suppose that the size of an element in basic array is $v_{array}$ and the size of entry is $v_{entry}$, then the total size of hash table $V_1$ is shown in Formula 7.
+ \begin{equation}\label{eq:numberofdata}
+  V_1=b\cdot v_{array}+ G\cdot v_{entry}
+\end{equation}
+Let's discuss the peak value of memory used in dividing the source file into sub files, it is obvious that the peak occurs when each sub-file buffer is full at the same time. Then the memory usage $V_2$ is $f\cdot e\cdot r$. In Hash Grouping phase, bHash just groups a sub file at a time, then the maximum memory usage during grouping process $V_3$ equals $g$. So the total memory usage is shown in Formula 8.
+\begin{equation}\label{eq:numberofdata}
+  V=V_1+ max(V_2,V_3)=b\cdot v_{array}+ G\cdot v_{entry}+ max(f\cdot e\cdot r,g)
+\end{equation}
+We group each sub file sequentially, it is best that the grouping buffer size is less than or equal to the amount of a sub file. A larger buffer will make kv-pairs buffered involve multiple sub files, which brings more unnecessary disk seek. In general, $V_2\textgreater V_3$, so Formula 8 can be simplified as formula 9.
+\begin{equation}\label{eq:numberofdata}
+  V=b\cdot v_{array}+ G\cdot v_{entry}+ f\cdot e\cdot r
+\end{equation}
+
+ If the maximum memory space $V$ is given, the relationship between memory usage and disk access can be deducted as follows by combining formula 6 and 9.
+ \begin{equation}\label{eq:numberofdata}
+  S=\frac{M\cdot f}{V-b\cdot v_{array}- G\cdot v_{entry}}+\frac{M}{g}
+\end{equation}
+When available memory size is fixed, the number of buckets $b$ increases or grouping buffer size $g$ decreases which both result the increase of disk I/O. At the same time, more different groups $G$, e.g., the data is more dispersed, a buffer may involve more groups, means that one flush will contain more seeks, therefore, the number of disk access $S$ will increase as shown in Formula 10. In fact, when $b$ reaches a certain threshold, the effect of the number of hash buckets on the time performance and memory usage is very little. In addition, it is easy to understand that larger buffer will reduce disk I/O cost and improve the Performance. The experimental evaluation for bHash parameters is shown in section \uppercase\expandafter{\romannumeral5}.
+
+%\subsection{Use Cases}
+%
+%plug in, build plugin support for database groupby

@@ -1,0 +1,85 @@
+\section{Related Work}
+
+ A increasingly large body of work has focused on the problem of key grouping (or Group By). There are two categories of GroupBy implementations in
+general, sort-based grouping and hash-based grouping. Each of these algorithms can be used for anywhere in database query related to grouping (Group By, SUM, AVE, etc) \cite{Hellerstein1996Query}. This section provides some backgrounds on existing key grouping approaches. Section A introduces the merge-sort grouping algorithm and Section B provides a detailed description on memory-constraint hash algorithm for SQL Hash GroupBy clause.
+
+%\begin{figure}%figure 2
+%\includegraphics[width=.5\textwidth]{sortgrouping}
+%\caption{The merge-sort grouping process.}
+%\end{figure}
+
+\subsection{Merge-Sort Grouping Algorithm}%2.1
+One of the most widely used key grouping algorithm is merge-sort grouping algorithm widely used in MapReduce \cite{dean2008mapreduce} and SQL Group By operator \cite{nasir2015power},\cite{mysql2009mysql},\cite{boicea2012mongodb},\cite{momjian2001postgresql},\cite{agrawal2005database}.
+
+The Distributed Computing Framework MapReduce uses a merge-sort at both the Map and Reduce phases to group kv-pairs. These kv-pairs to be grouped will be constantly written to the memory buffer. The buffer is used to collect kv-pairs in batches, so as to minimize the impact of disk I/O. The entire buffer size is limited and when the amount of data in the buffer reaches the threshold, the background spilled thread sorts these kv-pairs in the memory buffer in accordance with the key, and writes these kv-pairs have sorted in the buffer to disk as a partial grouping file. Each spilling operation generates a spilled file on disk. Finally, a merge phase is required to sort these partial grouping files to generate the final grouping file.
+
+In SQL database, The default Group By implementation is to scan the entire table, e.g. group records in table by merge-sort algorithm or make use of index based on columns specified by Group By clause to avoid sorting again \cite{mysql2009mysql}. Sorting is never  the  best, except  when  tables  are ordered  in  advance  or  when the  result  have  to  be sorted  on operation  key \cite{Bratbergsengen1984Hashing}.
+
+
+Merge-sort can achieve the purpose of aggregating kv-pairs for any amount of data, has no data distribution dependency and is highly scalable. However, the execution efficiency is not high enough. The merge-sort algorithm aggregates kv-pairs with the same key by sorting key completely, so that the grouping keys are ordered among different groups. Commonly, keeping different groups in order is redundant because the aim of grouping is to store kv-pairs having the same key on adjacent locations on the disk, and it¡¯s irrelevant Whether grouping keys are sorted between two groups. Therefore, merge-sort for aggregating kv-pairs will result in unnecessary computational overhead. on the other hand, the amount of memory required for sorting is proportional to the total number of kv-pairs in the buffer rather than the number of distinct keys.
+
+\subsection{Memory-Constraint Hash Grouping in SQL database}%2.2
+Group By is frequently used in relation database such as MySQL. MariaDB that a branch of the MySQL database has a hash grouping aggregation strategy for Group By query operations \cite{bartholomew2012mariadb}. We refer to this approach as \emph{memory-constraint hash grouping}. %it is shown in Algorithm 1 \cite{HashAggregate15}.
+
+%\renewcommand{\algorithmicrequire}{\textbf{Input:}}
+%\renewcommand{\algorithmicensure}{\textbf{Output:}}
+%
+%%insert table 1 Hash Group By Algorithm
+%\begin{algorithm}[ht]
+%    \caption{Memory-Constraint Hash Grouping}
+%  \label{tab:commands}
+%    \begin{algorithmic}[1]
+%    %\SetKwInOut{Input}{Input}
+%    %\SetKwInOut{Output}{Output}
+%   %  \Input{Input : Table \emph{T} , \emph{MTS}(see Definition 1) }
+%  %  \Output{Output: The aggregated result file}
+%\Require  Table \emph{T} , \emph{MTS}(see Definition 1)
+%    \Ensure The aggregated result file
+%    \State  \emph{HashTable:=$\phi$}
+%    \State \emph{ResFile:=$\phi$}
+%     \State \emph{memUsed:=$\phi$}
+%      \For{each input row}
+%      \State calculate hash value on group by columns
+%      \If {the row is mapped to bucket in memory}
+%      \If {\emph{memUsed+sizeof(row)}$\le$ \emph{MTS}}
+%     \State check for a matching row in the hash table
+%      \If {there is no match}
+%       \State insert a new row into the \emph{HashTable}
+%       \Else
+%       \State update the matching row in  \emph{HashTable}
+%      \EndIf
+%     \State \emph{memUsed+= sizeof(row)}
+%      \Else
+%      \State spill some buckets and partial aggregated rows as a new partition and update \emph{memUsed}
+%      \EndIf
+%       \Else
+%       \State append the row to the corresponding partition file
+%      \EndIf
+%      \EndFor
+%      \State output the aggregated result in memory to the \emph{ResFile}
+%       \For{each partition on disk}
+%       \State read back the partition and reload partial aggregated results to rebuild hash buckets and update \emph{memUsed};
+%       \State repeat 4-23
+%       \EndFor
+%    \end{algorithmic}
+%\end{algorithm}
+In general, the hash-based grouping creates an in-memory hash table for grouping rows, kv-pairs are then hashed by key and accumulated. Finally, the aggregated results are saved in hash table. memory-constraint hash is similar to hash join, it does not require sort but more memory. Memory-constraint hash partitions  the  larger  task  into smaller  subtasks  where  the  subtasks can  be executed in memory completely \cite{Bratbergsengen1984Hashing},\cite{HashAggregate15}. If the size of data to be grouped exceeds the memory threshold, one or more partitions or buckets including any partial aggregated results along with any additional new rows that hash to the spilled buckets or partitions will be spilled to disk. These new rows that hash to the spilled partitions will be divided up into the partitions that they belong to although won't be aggregated temporarily. Once all input groups have been processed, the completed in-memory groups will be output and repeat the algorithm by reading back and aggregating one spilled partition at a time.
+Compared to merge-sort, memory-constraint hash requires more memory.
+The advantage of memory-constraint hash is having ensured that the part of hash buckets residing in memory is complete. Note that duplicate rows are a big problem as they lead to skew in the size of different hash buckets and make it difficult to divide the workload into small uniform portions. For a larger bucket spilled to disk, subsequent reading back and re-aggregating may bring recursively executing the algorithm many times so that read and write the disk more frequently. The I/O overhead increases sharply.
+
+\subsection{Other Hash-based Approaches}
+
+A recently proposed method Compressed Buffer Tree (CBT) \cite{amur2013memory} is an in-memory variant of a buffer tree that uses a B-tree and maintains most of the buffers in compressed form for memory-efficiency. The key of CBT is to store the partially aggregated contents in compressed form in memory to reduce memory consumption and organizes the compressed buffers as a B-tree structure to speed up the key-value insertion \textcolor{red}{[13]}. However, the entire CBT resides in memory, which has the weaknesses of poor scalability. At the same time, compressing and decompressing buffers will result in high overhead. when a node buffer is full, all of the decompressed fragments will be fast merged as the partial aggregated results. however, not all algorithms can be expressed by partial aggregation, for example, AVE operation. There is no intermediate results in our method and the kv-pairs that share the same key will be directly located on the adjacent disk location.
+
+\textcolor {red} {MR-hash \cite{Li2011A} is another group-by method for MapReduce framework. It utilizes a series of independent hash functions $h_1(),h_2(),\ldots$ during the shuffling process. The first hash function $h_1()$ partitions the map output into subsets corresponding to the specific reducers. Then, hash functions $h_2(),h_3(),\ldots$ are used to recursively partition the reduce input for each reducer. More specifically, $h_2()$ partitions the input data into multiple buckets, where the first bucket is held completely in memory and the other buckets are streamed out to disks. These buckets are processed sequentially in memory. For a bucket that is not fit in memory, a further partition will be executed recursively with a new hash function. MR-hash avoids the CPU cost from sorting as in the original MapReduce which relies on \emph{merge-sort}. Basically, the idea of MR-hash is similar to the \emph{memory-constraint hash grouping} and is also sensitive to skew data.}
+
+\textcolor {red}{Tian et al. study on non-commutative Aggregators in MapReduce Programs \cite{Xiao2014Nondeterminism}. Aggregation is commutative if its output remains the same when its input rows are reordered. Commutativity aggregation is also studied to improve job performance. Yu et al. proposed various partial aggregation mechanisms to reduce network I/O when the target reducers satisfy certain commutativity properties \cite{yu2009distributed}. We focus on reducing the local key value grouping overhead by relaxing the ordered constraint condition among groups and the gains are obvious.}
+
+%Compressed Buffer Tree (CBT) \cite{amur2013memory} is a recently proposed approach to improve memory efficiency of hash-based grouping, which relies on a combination of buffering, compression, and lazy aggregation. A CBT stores the partially aggregated contents in compressed form in memory to reduce memory consumption and organizes the compressed buffers as a B-tree structure to speed up the key-value insertion \cite{arge2003buffer}. By compressing kv-pairs, memory consumption can be reduced, but compressing and decompressing buffers will result in extra overhead.
+
+Our strategy is to leverages both hashing and sorting. Basically, we firstly obtain the global data distribution knowledge  i.e.,
+$\langle groupkey,groupsize \rangle$ information. With this knowledge, we assume the sorted file structure and compute the output position for every group in the sorted file. Actually, we do not really sort but only guarantee the kv-pairs in the same group to be locate together. The memory usage is only proportional to the number of unique key and each groupsize is only an integer type, which greatly decreases the memory consumption.
+
+
+
+
