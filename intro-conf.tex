@@ -18,6 +18,28 @@ A few variations of both sort-based grouping and hash-based grouping exist. Reca
 
 SQL databases mainly use sort-based grouping and some of them propose a hash-based grouping algorithm \cite{MySQLGROUPBYOptimization} \cite{Bratbergsengen1984Hashing}. The sort-based grouping is similar to that in Hadoop MapReduce. The default sort-based method is not the most efficient way to execute the Group By query \cite{mysql2009mysql}. A hash-based grouping has been used in MariaDB \cite{bartholomew2012mariadb}, Oracle \cite{stephens2005oracle}, Postgresql \cite{momjian2001postgresql}, and SQL Server \cite{agrawal2005database}. The hash-based grouping creates an in-memory hash table for grouping rows. If the hash table becomes too large to be fit in memory, the input records are partitioned into smaller work tables which are recursively partitioned until they fit into memory. Once all input groups have been processed, the completed in-memory groups are output and repeat the algorithm by reading back and aggregating one spilled partition at a time until all partitions have been processed. We refer to this approach as \emph{memory-constraint hash grouping}. It excels at efficiently aggregating large data sets and performs better than merge-sort grouping in some situation. However, when processing highly skewed data sets, the sub-tables sizes are not balanced, which leads to multiple recursive partitions and downgrade grouping performance.
 
+introduce grouping and its importance
+
+The state-of-the-art memory-constraint grouping includes 1. merge-sort, 2. repeat hash, 3. grouped hash, 4. indexing+filing, 5. ... (introduce them respectively). 
+
+As known, in real life application, the group size exhibits power-law distribution. We observe that these grouping implementations exhibit different performance and memory cost for big groups and small groups. As shown in Figure. 1a, ..... So, for big groups, the best is indexing+filing. As shown in Figure. 1b, .... So the best for small groups is grouped hash. Therefore, the ideal implementation should take the group size into account, and a hybrid grouping approach is desired.
+
+Two problems are raised. 1. How to detect the group size efficiently? 2. How to define big group and small group? 
+
+For the first problem, we solve it by leveraging min-count sketch...
+
+For the second problem, we formalize it as an optimization problem and solve it (obtain the optimal threshold that separate big and small groups) given the memory budget. 
+
+We evaluate our algorithm through extensive experiments. Our results show that ....
+
+The paper organization
+
+
+
+
+
+
+
 In this paper, we propose an I/O efficient external hash grouping scheme \emph{bHash} that leverages both hashing and sorting. Basically, bHash contains two phases and needs to pass the input kv-pairs file twice. In the first phase, it hashes the kv-pairs in a hash table but only records the compressed group key and accumulates the value size that belongs to the same group key, by which we obtain the global data distribution knowledge, i.e., $\langle group key, group size \rangle$ information. With this knowledge, we assume the sorted file structure and compute every group's output position in the sorted file. Actually, we do not really sort but only guarantee the kv-pairs in the same group to be locate together. Given the size information of every group, the output file position (i.e., file offset) can be calculated by accumulating the group size. Then a table called \emph{pos\_table} that contains the global $\langle group key, file position\rangle$ information is obtained. In the second phase, using the in-memory buffered pos\_table, bHash needs another pass of the input file and outputs kv-pairs to file in terms of the pos\_table. Furthermore, in the second phase we provide an output buffer design that can greatly reduce the number of write I/Os. The ``b'' in bHash indicates both the buffered pos\_table and the output buffer, with the usage of which we can improve our performance a lot. To sum up, bHash benefits from both the \emph{hash} table's random access ability (from hash-based grouping) and the \emph{sorted} structure's sequential access ability (from sort-based grouping). With the buffer design, we can connect the hash table structure and the sorted structure and achieves a better performance.
 
 
